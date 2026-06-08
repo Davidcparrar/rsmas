@@ -1,0 +1,3 @@
+[workspace]
+members = ["rsmas", "agent-core"]
+resolver = "3"
