@@ -82,8 +82,7 @@ struct OllamaToolCallFunction {
     arguments: Value,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "role", rename_all = "lowercase")]
+#[derive(Deserialize)]
 struct OllamaResponse {
     message: OllamaMessage,
 }

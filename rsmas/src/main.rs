@@ -64,7 +64,7 @@ fn main() {
                  Do not describe the tool call itself.",
         )
         .client(OllamaClient {
-            model: "llama3.1:8b".to_string(),
+            model: "qwen2.5:14b".to_string(), //"llama3.1:8b".to_string(),
             base_url: "http://localhost:11434".to_string(),
         })
         .tool(GetWeather)

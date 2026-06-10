@@ -2,18 +2,6 @@ use agent_core::base::{ChatCompletions, Tool};
 use agent_core::types::Message;
 use serde_json::Value;
 
-// Agent {
-//
-//     name = "assistant",
-//     description = "You are a helpful assistant that converts Celsius to Fahrenheit."
-//     instructions = "You are helpful, use tools when appropiate"
-//     model_client = OllamaChatCompletionsClient(
-//         model = "gemma:2b",
-//         base_url = "localhost",
-//     )
-//      tools = [get_weather]
-//  }
-//
 pub struct Agent {
     pub name: String,
     pub description: String,
