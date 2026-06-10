@@ -72,7 +72,8 @@ impl Agent {
             .collect();
         // Step 2: Call the chat completion API
         // // sketch — not paste-ready
-        loop {
+        const MAX_ITERS: usize = 10;
+        for _ in 0..MAX_ITERS {
             let response = self.client.create(&messages, &tool_schemas);
 
             match response {
@@ -111,6 +112,7 @@ impl Agent {
                 }
             }
         }
+        "max iterations exceeded".to_string()
     }
 
     // fn run_stream(&mut self, task: impl Into<String>) -> String {
@@ -127,7 +129,7 @@ impl Tool for GetWeather {
         "get_weather"
     }
     fn description(&self) -> &str {
-        "Get current weather for a city"
+        "Get the weather for a single city. To get weather for multiple cities, call this tool once per city in parallel."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -143,7 +145,13 @@ impl Tool for GetWeather {
             .get("city")
             .and_then(Value::as_str)
             .unwrap_or("unknown");
-        format!("Weather in {city}: 22°C, sunny")
+
+        serde_json::json!({
+            "city": city,
+            "temperature_c": 22,
+            "condition": "sunny"
+        })
+        .to_string()
     }
 }
 
@@ -186,6 +194,6 @@ fn main() {
         agent.tools.len(),
     );
 
-    let result = agent.run("What is the weather in Paris?");
+    let result = agent.run("What is the weather in Paris and Tokyo?");
     println!("Result: {}", result);
 }
