@@ -1,7 +1,7 @@
 pub mod clients;
 
 use agent_core::base::{ChatCompletions, Tool};
-use agent_core::types::{Message, Role, ToolCall};
+use agent_core::types::Message;
 use clients::OllamaClient;
 use serde_json::{Value, json};
 
@@ -48,8 +48,12 @@ impl Agent {
     fn run(&mut self, task: impl Into<String>) -> String {
         // Step 1: Prepare messages for the chat completion request
         let mut messages = vec![
-            Message::new(Role::System, self.instructions.clone(), None),
-            Message::new(Role::User, task.into(), None),
+            Message::System {
+                content: self.instructions.clone(),
+            },
+            Message::User {
+                content: task.into(),
+            },
         ];
         //Step 1b: Create tool schemas:
         let tool_schemas: Vec<Value> = self
@@ -70,22 +74,42 @@ impl Agent {
         // // sketch — not paste-ready
         loop {
             let response = self.client.create(&messages, &tool_schemas);
-            if let Some(calls) = &response.tool_calls {
-                messages.push(response.clone()); // assistant turn with tool_calls
-                for call in calls {
-                    let tool = self
-                        .tools
-                        .iter()
-                        .find(|t| t.name() == call.name)
-                        .expect("unknown tool");
-                    let result = tool.execute(&call.arguments);
-                    messages.push(Message::new(Role::Tool, result, None));
+
+            match response {
+                Message::Assistant {
+                    content,
+                    tool_calls: Some(calls),
+                } => {
+                    messages.push(Message::Assistant {
+                        content: content.clone(),
+                        tool_calls: Some(calls.clone()),
+                    });
+                    for call in &calls {
+                        let tool = self
+                            .tools
+                            .iter()
+                            .find(|t| t.name() == call.name)
+                            .expect("unknown tool");
+                        let result = tool.execute(&call.arguments);
+                        messages.push(Message::Tool {
+                            content: result,
+                            tool_call_id: Some(call.id.clone()),
+                        });
+                    }
+                    // fall through to next loop iteration
                 }
-                continue;
+                Message::Assistant {
+                    content,
+                    tool_calls: None,
+                } => {
+                    return content;
+                }
+                other => {
+                    // model returned a non-assistant message — shouldn't happen
+                    messages.push(other);
+                    return "unexpected response role".to_string();
+                }
             }
-            messages.push(response.clone());
-            // Step 3: Return the response
-            return response.content;
         }
     }
 

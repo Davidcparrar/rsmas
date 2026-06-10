@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use agent_core::ChatCompletions;
-use agent_core::types::{Message, Role, ToolCall};
+use agent_core::types::{Message, ToolCall};
 use serde_json::Value;
 
 #[derive(Serialize)]
@@ -13,47 +13,67 @@ struct OllamaRequest {
     tools: Vec<Value>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
-enum OllamaRole {
-    System,
-    User,
-    Assistant,
-    Tool,
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "lowercase")]
+enum OllamaMessage {
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_calls: Option<Vec<OllamaToolCall>>,
+    },
+    Tool {
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
+    },
 }
 
-impl From<Role> for OllamaRole {
-    fn from(r: Role) -> Self {
-        match r {
-            Role::System => OllamaRole::System,
-            Role::User => OllamaRole::User,
-            Role::Assistant => OllamaRole::Assistant,
-            Role::Tool => OllamaRole::Tool,
+impl From<Message> for OllamaMessage {
+    fn from(m: Message) -> Self {
+        match m {
+            Message::System { content } => OllamaMessage::System { content },
+            Message::User { content } => OllamaMessage::User { content },
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => OllamaMessage::Assistant {
+                content,
+                tool_calls: tool_calls.map(|tcs| tcs.into_iter().map(Into::into).collect()),
+            },
+            Message::Tool {
+                content,
+                tool_call_id,
+            } => OllamaMessage::Tool {
+                content,
+                tool_call_id,
+            },
         }
     }
-}
-
-impl From<OllamaRole> for Role {
-    fn from(r: OllamaRole) -> Self {
-        match r {
-            OllamaRole::System => Role::System,
-            OllamaRole::User => Role::User,
-            OllamaRole::Assistant => Role::Assistant,
-            OllamaRole::Tool => Role::Tool,
-        }
-    }
-}
-#[derive(Serialize, Deserialize, Clone)]
-struct OllamaMessage {
-    role: OllamaRole,
-    content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_calls: Option<Vec<OllamaToolCall>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct OllamaToolCall {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    id: String,
     function: OllamaToolCallFunction,
+}
+
+impl From<ToolCall> for OllamaToolCall {
+    fn from(tc: ToolCall) -> Self {
+        OllamaToolCall {
+            id: tc.id,
+            function: OllamaToolCallFunction {
+                name: tc.name,
+                arguments: tc.arguments,
+            },
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -62,7 +82,8 @@ struct OllamaToolCallFunction {
     arguments: Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "lowercase")]
 struct OllamaResponse {
     message: OllamaMessage,
 }
@@ -84,23 +105,8 @@ impl OllamaClient {
 impl ChatCompletions for OllamaClient {
     fn create(&self, messages: &[Message], tools: &[Value]) -> Message {
         // Step 1: Convert types to provider format
-        let ollama_messages: Vec<OllamaMessage> = messages
-            .iter()
-            .map(|m| OllamaMessage {
-                role: m.role.clone().into(),
-                content: m.content.clone(),
-                tool_calls: m.tool_calls.as_ref().map(|tcs| {
-                    tcs.iter()
-                        .map(|tc| OllamaToolCall {
-                            function: OllamaToolCallFunction {
-                                name: tc.name.clone(),
-                                arguments: tc.arguments.clone(),
-                            },
-                        })
-                        .collect()
-                }),
-            })
-            .collect();
+        let ollama_messages: Vec<OllamaMessage> =
+            messages.iter().cloned().map(Into::into).collect();
 
         // Step 2: Make API call
         let request_body = OllamaRequest {
@@ -132,31 +138,47 @@ impl ChatCompletions for OllamaClient {
         println!("{}", pretty);
         println!("================\n");
 
+        // Step 3: Convert response to Message format
         let response: OllamaResponse =
             serde_json::from_str(&response_str).expect("Failed to parse Ollama response");
 
-        // Step 3: Convert response to Message format
         let OllamaResponse { message } = response;
-        let OllamaMessage {
-            role,
-            content,
-            tool_calls,
-        } = message;
 
-        let tool_calls = tool_calls.map(|tcs| {
-            tcs.into_iter()
-                .map(|tc| ToolCall {
-                    name: tc.function.name,
-                    arguments: tc.function.arguments,
-                })
-                .collect()
-        });
+        let canonical = match message {
+            OllamaMessage::System { content } => Message::System { content },
+            OllamaMessage::User { content } => Message::User { content },
+            OllamaMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let tool_calls = tool_calls.map(|tcs| {
+                    tcs.into_iter()
+                        .map(|tc| {
+                            let OllamaToolCall { id, function } = tc;
+                            let OllamaToolCallFunction { name, arguments } = function;
+                            ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            }
+                        })
+                        .collect()
+                });
+                Message::Assistant {
+                    content,
+                    tool_calls,
+                }
+            }
+            OllamaMessage::Tool {
+                content,
+                tool_call_id,
+            } => Message::Tool {
+                content,
+                tool_call_id,
+            },
+        };
 
-        Message {
-            role: role.into(),
-            content: content,
-            tool_calls,
-        }
+        canonical
     }
 }
 

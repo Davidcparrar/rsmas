@@ -32,25 +32,27 @@ impl From<&str> for Role {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ToolCall {
+    pub id: String,
     pub name: String,
     pub arguments: Value,
 }
 
-#[derive(Clone)]
-pub struct Message {
-    pub role: Role,
-    pub content: String,
-    pub tool_calls: Option<Vec<ToolCall>>,
-}
-
-impl Message {
-    pub fn new(role: Role, content: String, tool_calls: Option<Vec<ToolCall>>) -> Self {
-        Self {
-            role,
-            content,
-            tool_calls,
-        }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub enum Message {
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: String,
+        tool_calls: Option<Vec<ToolCall>>,
+    },
+    Tool {
+        content: String,
+        tool_call_id: Option<String>,
+    },
 }
