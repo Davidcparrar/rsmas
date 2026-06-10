@@ -435,6 +435,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]
