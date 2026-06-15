@@ -1,6 +1,10 @@
 use agent_core::base::{ChatCompletions, Tool};
 use agent_core::types::Message;
 use serde_json::Value;
+use std::marker::PhantomData;
+
+pub struct NoClient;
+pub struct HasClient;
 
 pub struct Agent {
     pub name: String,
@@ -10,15 +14,16 @@ pub struct Agent {
     tools: Vec<Box<dyn Tool>>,
 }
 
-pub struct AgentBuilder {
+pub struct AgentBuilder<State = NoClient> {
     name: String,
     description: String,
     instructions: String,
     client: Option<Box<dyn ChatCompletions>>,
     tools: Vec<Box<dyn Tool>>,
+    _state: PhantomData<State>,
 }
 
-impl AgentBuilder {
+impl<State> AgentBuilder<State> {
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
@@ -29,16 +34,26 @@ impl AgentBuilder {
         self
     }
 
-    pub fn client(mut self, client: impl ChatCompletions + 'static) -> Self {
-        self.client = Some(Box::new(client));
-        self
-    }
-
     pub fn tool(mut self, tool: impl Tool + 'static) -> Self {
         self.tools.push(Box::new(tool));
         self
     }
+}
 
+impl AgentBuilder<NoClient> {
+    pub fn client(self, client: impl ChatCompletions + 'static) -> AgentBuilder<HasClient> {
+        AgentBuilder {
+            name: self.name,
+            description: self.description,
+            instructions: self.instructions,
+            client: Some(Box::new(client)),
+            tools: self.tools,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl AgentBuilder<HasClient> {
     pub fn build(self) -> Agent {
         Agent {
             name: self.name,
@@ -53,13 +68,14 @@ impl AgentBuilder {
 }
 
 impl Agent {
-    pub fn builder(name: impl Into<String>) -> AgentBuilder {
+    pub fn builder(name: impl Into<String>) -> AgentBuilder<NoClient> {
         AgentBuilder {
             name: name.into(),
             description: String::new(),
             instructions: String::new(),
             client: None,
             tools: Vec::new(),
+            _state: PhantomData,
         }
     }
 
